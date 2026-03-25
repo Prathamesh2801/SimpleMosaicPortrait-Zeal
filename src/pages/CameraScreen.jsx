@@ -8,7 +8,6 @@ import {
   Upload,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { submitToAPI } from "../api/uploadAPI";
 
 export default function CameraScreen() {
   const navigate = useNavigate();
@@ -68,12 +67,12 @@ export default function CameraScreen() {
     setPhase("processing");
     try {
       await new Promise((res) => setTimeout(res, 600));
-      await submitToAPI({
-        fullName: "Cypher",
-        comment: "Test Comment",
-        image: imgFile,
+      navigate("/form", {
+        state: {
+          image: preview,
+          file: imgFile,
+        },
       });
-      setPhase("done");
     } catch (err) {
       console.error(err);
       toast.error("Something went wrong. Please try again.");
