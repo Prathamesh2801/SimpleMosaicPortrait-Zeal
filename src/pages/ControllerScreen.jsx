@@ -36,7 +36,7 @@ export default function ControllerScreen() {
   });
   const queueRef = useRef([]); // FIFO queue of image URLs
   const processingRef = useRef(false); // true when an image is being processed (deform->mosaic)
-  const { data, eventType } = useSSE("/sse_api.php?Status=False", {
+  const { event } = useSSE("/sse_api.php?Status=False", {
     autoStart: true,
   });
   const recentProcessedRef = useRef(new Map()); // map: basePath -> timestamp
@@ -79,6 +79,7 @@ export default function ControllerScreen() {
   // Helper: enqueue a new image (called from SSE event handler)
   const enqueueImage = useCallback(
     (url) => {
+      console.log("📥 enqueue attempt:", url);
       const base = normalizeImagePath(url);
 
       // If the wall is full, ignore
@@ -131,7 +132,10 @@ export default function ControllerScreen() {
 
   // Process queue: if not already processing and queue non-empty, dequeue and start pipeline
   const processQueue = useCallback(() => {
-    if (processingRef.current) return;
+    if (processingRef.current) {
+      console.log("⏸️ Skipping processQueue (already processing)");
+      return;
+    }
     const next = queueRef.current.shift();
     if (!next) return;
     processingRef.current = true;
@@ -141,24 +145,35 @@ export default function ControllerScreen() {
 
   // SSE: push incoming user events into the queue (do not stop SSE)
   useEffect(() => {
-    if (!eventType) return;
+    if (!event) return;
 
-    if (eventType === "user" && data && data.data) {
-      const imgPath = data.data.Image_Path || data.data.image_path || "";
+    console.log("📦 SSE EVENT RECEIVED:", event);
+
+    if (event.type === "user" && event.data?.data) {
+      const imgPath =
+        event.data.data.Image_Path || event.data.data.image_path || "";
+
       if (!imgPath) {
-        console.warn("SSE user event missing Image_Path:", data);
+        console.warn("⚠️ SSE user event missing Image_Path:", event.data);
         return;
       }
+
       const trimmed = imgPath.replace(/^\/+/, "");
+
       const full = /^https?:\/\//i.test(trimmed)
         ? trimmed
         : `${BASE_URL}/${trimmed}`;
 
-      console.log("SSE: enqueueing image ->", full);
+      console.log("🚀 Enqueue from SSE ->", full);
+
       enqueueImage(full);
     }
-    // ignore heartbeats and other events
-  }, [eventType, data, enqueueImage]);
+
+    // optional debug
+    if (event.type === "heartbeat") {
+      console.log("💓 Heartbeat received");
+    }
+  }, [event, enqueueImage]);
 
   // When ImageDeform finishes, it calls this -> we start mosaic phase
   const handleDeformComplete = useCallback(() => {
@@ -170,13 +185,19 @@ export default function ControllerScreen() {
       const base = normalizeImagePath(imageURL);
       recentProcessedRef.current.set(base, Date.now());
     }
-
     processingRef.current = false;
     setImageURL(null);
     setPhase("idle");
     setTimeout(() => {
       processQueue();
     }, 100);
+    setTimeout(() => {
+      if (processingRef.current) {
+        console.warn("⚠️ Force releasing stuck processing");
+        processingRef.current = false;
+        processQueue();
+      }
+    }, 8000);
   }, [processQueue, imageURL]);
 
   const handleResetAll = useCallback(() => {

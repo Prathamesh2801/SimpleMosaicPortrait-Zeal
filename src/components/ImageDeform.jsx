@@ -1,270 +1,278 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 /**
- * ImageDeformAPIDimension
+ * ImageDeform
  *
  * Props:
- * - imageURL: string (image source from parent)
- * - currentAnimation: string (one of the animation ids below) — controls which animation to use
- * - onAnimationComplete: function called when the deform animation run finishes
- * - autoPlay: boolean (start automatically when imageURL arrives)
- *
- * Default currentAnimation is "explosionGather".
+ * - imageURL: string — image source from parent
+ * - currentAnimation: string — one of the animation ids below
+ * - onAnimationComplete: () => void — called after animation + hold
+ * - autoPlay: boolean — start automatically when imageURL arrives
+ * - holdDuration: number (ms) — how long to hold after animation (default 3000)
  */
+
+const GRID_COLS = 16;
+const GRID_ROWS = 16;
+const PAD = 32; // px padding on all sides — image never touches screen edge
 
 export default function ImageDeform({
   imageURL,
   currentAnimation = "pixelSpin",
   onAnimationComplete,
   autoPlay = true,
+  holdDuration = 30000,
 }) {
-  const [image, setImage] = useState(imageURL || null);
+  const [imgSize, setImgSize] = useState(null);
   const [pieces, setPieces] = useState([]);
   const [animate, setAnimate] = useState(false);
   const [animationType, setAnimationType] = useState(currentAnimation);
 
-  const GRID_SIZE = 16;
   const completionTimerRef = useRef(null);
+  const holdTimerRef = useRef(null);
 
-  // keep animationType in sync with prop when animate starts
   useEffect(() => {
     setAnimationType(currentAnimation);
   }, [currentAnimation]);
 
-  // when parent supplies a new image, prepare pieces and optionally autoplay
   useEffect(() => {
-    if (imageURL) {
-      setImage(imageURL);
-      setAnimate(false);
-      if (autoPlay) {
-        setTimeout(() => setAnimate(true), 700);
-      }
-    } else {
-      // parent cleared image
-      setImage(null);
-      setAnimate(false);
+    if (!imageURL) {
+      setImgSize(null);
       setPieces([]);
-    }
-  }, [imageURL, autoPlay]);
-
-  // populate pieces grid
-  useEffect(() => {
-    if (!image) {
-      setPieces([]);
+      setAnimate(false);
       return;
     }
-    const temp = [];
-    for (let row = 0; row < GRID_SIZE; row++) {
-      for (let col = 0; col < GRID_SIZE; col++) {
-        temp.push({ id: row * GRID_SIZE + col, row, col });
-      }
-    }
-    setPieces(temp);
-  }, [image]);
 
-  // cleanup timer on unmount
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      setImgSize({ width: img.naturalWidth, height: img.naturalHeight });
+      setAnimate(false);
+
+      const temp = [];
+      for (let row = 0; row < GRID_ROWS; row++) {
+        for (let col = 0; col < GRID_COLS; col++) {
+          temp.push({ id: row * GRID_COLS + col, row, col });
+        }
+      }
+      setPieces(temp);
+
+      if (autoPlay) {
+        setTimeout(() => setAnimate(true), 600);
+      }
+    };
+    img.onerror = () => {
+      // Still build the grid even if CORS fails — backgroundImage will still render
+      setImgSize({ width: 16, height: 9 }); // fallback ratio
+      const temp = [];
+      for (let row = 0; row < GRID_ROWS; row++) {
+        for (let col = 0; col < GRID_COLS; col++) {
+          temp.push({ id: row * GRID_COLS + col, row, col });
+        }
+      }
+      setPieces(temp);
+      if (autoPlay) setTimeout(() => setAnimate(true), 600);
+    };
+    img.src = imageURL;
+
+    return () => { img.onload = null; img.onerror = null; };
+  }, [imageURL, autoPlay]);
+
   useEffect(() => {
     return () => {
-      if (completionTimerRef.current) {
-        clearTimeout(completionTimerRef.current);
-        completionTimerRef.current = null;
-      }
+      clearTimeout(completionTimerRef.current);
+      clearTimeout(holdTimerRef.current);
     };
   }, []);
 
-  // animation factory: returns initial/animate/transition for each piece
-  const getAnimationProps = (piece) => {
-    const initialX = (Math.random() - 0.5) * 800;
-    const initialY = (Math.random() - 0.5) * 800;
-    const rotate = Math.random() * 720 - 360;
-
+  const getAnimationProps = useCallback((piece) => {
+    const rndX = (Math.random() - 0.5) * 900;
+    const rndY = (Math.random() - 0.5) * 900;
+    const rndRot = Math.random() * 720 - 360;
     const centerDist = Math.sqrt(
-      Math.pow(piece.col - GRID_SIZE / 2, 2) + Math.pow(piece.row - GRID_SIZE / 2, 2)
+      Math.pow(piece.col - GRID_COLS / 2, 2) + Math.pow(piece.row - GRID_ROWS / 2, 2)
     );
+    const diag = piece.row + piece.col;
 
-    const animations = {
-      // original five
+    const map = {
       pixelSpin: {
-        initial: { x: initialX, y: initialY, rotate, opacity: 0, scale: 0.5 },
+        initial: { x: rndX, y: rndY, rotate: rndRot, opacity: 0, scale: 0.4 },
         animate: { x: 0, y: 0, rotate: 0, opacity: 1, scale: 1 },
-        transition: { duration: 2, delay: Math.random() * 1.5, ease: "easeOut" },
+        transition: { duration: 1.8, delay: Math.random() * 1.2, ease: "easeOut" },
       },
       waveCollapse: {
-        initial: { y: -800, opacity: 0, scale: 0.3 },
+        initial: { y: -700, opacity: 0, scale: 0.3 },
         animate: { y: 0, opacity: 1, scale: 1 },
-        transition: {
-          duration: 1.5,
-          delay: piece.col * 0.02 + piece.row * 0.02,
-          ease: [0.6, 0.05, 0.01, 0.9],
-        },
+        transition: { duration: 1.4, delay: piece.col * 0.025 + piece.row * 0.012, ease: [0.6, 0.05, 0.01, 0.9] },
       },
       spiralZoom: {
-        initial: { scale: 0, rotate: -180, opacity: 0 },
+        initial: { scale: 0, rotate: -360, opacity: 0 },
         animate: { scale: 1, rotate: 0, opacity: 1 },
-        transition: {
-          duration: 1.8,
-          delay: centerDist * 0.03,
-          ease: "easeOut",
-        },
+        transition: { duration: 1.7, delay: centerDist * 0.035, ease: "easeOut" },
       },
       explosionGather: {
-        initial: {
-          x: (piece.col - GRID_SIZE / 2) * 50,
-          y: (piece.row - GRID_SIZE / 2) * 50,
-          scale: 0,
-          opacity: 0,
-        },
+        initial: { x: (piece.col - GRID_COLS / 2) * 55, y: (piece.row - GRID_ROWS / 2) * 55, scale: 0, opacity: 0 },
         animate: { x: 0, y: 0, scale: 1, opacity: 1 },
-        transition: { duration: 2, delay: Math.random() * 0.8, ease: [0.34, 1.56, 0.64, 1] },
+        transition: { duration: 1.9, delay: Math.random() * 0.7, ease: [0.34, 1.56, 0.64, 1] },
       },
       flipMosaic: {
-        initial: { rotateY: 180, opacity: 0, scale: 0.8 },
+        initial: { rotateY: 180, opacity: 0, scale: 0.75 },
         animate: { rotateY: 0, opacity: 1, scale: 1 },
-        transition: { duration: 1.2, delay: (piece.row + piece.col) * 0.03, ease: "easeInOut" },
+        transition: { duration: 1.1, delay: diag * 0.028, ease: "easeInOut" },
       },
-
-      // five new animations (added)
       swirlDrop: {
-        initial: {
-          x: (GRID_SIZE - piece.col) * 40 + (Math.random() - 0.5) * 60,
-          y: -600 + (piece.row - GRID_SIZE / 2) * 6,
-          rotate: (Math.random() - 0.5) * 360,
-          opacity: 0,
-          scale: 0.6,
-        },
+        initial: { x: (GRID_COLS - piece.col) * 35 + (Math.random() - 0.5) * 60, y: -700 + (piece.row - GRID_ROWS / 2) * 8, rotate: (Math.random() - 0.5) * 400, opacity: 0, scale: 0.5 },
         animate: { x: 0, y: 0, rotate: 0, opacity: 1, scale: 1 },
-        transition: {
-          duration: 1.6,
-          delay: (piece.row + (GRID_SIZE - piece.col)) * 0.018 + Math.random() * 0.25,
-          ease: [0.22, 1, 0.36, 1],
-        },
+        transition: { duration: 1.5, delay: (piece.row + (GRID_COLS - piece.col)) * 0.016 + Math.random() * 0.2, ease: [0.22, 1, 0.36, 1] },
       },
       rippleSpread: {
-        initial: { y: 40, scale: 0.7, opacity: 0 },
+        initial: { y: 50, scale: 0.6, opacity: 0 },
         animate: { y: 0, scale: 1, opacity: 1 },
-        transition: { duration: 1.4, delay: centerDist * 0.04, ease: [0.34, 1.56, 0.64, 1] },
+        transition: { duration: 1.3, delay: centerDist * 0.042, ease: [0.34, 1.56, 0.64, 1] },
       },
       zoomRotate: {
-        initial: { scale: 0.1, rotate: (Math.random() - 0.5) * 720, opacity: 0 },
+        initial: { scale: 0.05, rotate: (Math.random() - 0.5) * 720, opacity: 0 },
         animate: { scale: 1, rotate: 0, opacity: 1 },
-        transition: {
-          duration: 1.9,
-          delay: (piece.row + piece.col) * 0.01 + Math.random() * 0.2,
-          ease: "easeOut",
-        },
+        transition: { duration: 1.8, delay: diag * 0.012 + Math.random() * 0.18, ease: "easeOut" },
       },
       foldUnfold: {
-        initial: { scaleY: 0.15, opacity: 0 },
+        initial: { scaleY: 0.1, opacity: 0 },
         animate: { scaleY: 1, opacity: 1 },
-        transition: { duration: 1.1, delay: (piece.row + piece.col) * 0.02, ease: "easeInOut" },
+        transition: { duration: 1.0, delay: diag * 0.022, ease: "easeInOut" },
       },
       cascadeFlip: {
-        initial: { rotateX: 90, opacity: 0, y: 30 },
+        initial: { rotateX: 90, opacity: 0, y: 25 },
         animate: { rotateX: 0, opacity: 1, y: 0 },
-        transition: {
-          duration: 1.2,
-          delay: piece.col * 0.02 + (GRID_SIZE - piece.row) * 0.008,
-          ease: "easeOut",
-        },
+        transition: { duration: 1.1, delay: piece.col * 0.022 + (GRID_ROWS - piece.row) * 0.01, ease: "easeOut" },
       },
     };
 
-    return animations[animationType] || animations.explosionGather;
-  };
+    return map[animationType] ?? map.explosionGather;
+  }, [animationType]);
 
-  // when animate toggles on, start completion timer (longest piece)
   useEffect(() => {
-    if (!animate || pieces.length === 0) {
-      if (completionTimerRef.current) {
-        clearTimeout(completionTimerRef.current);
-        completionTimerRef.current = null;
-      }
-      return;
-    }
+    clearTimeout(completionTimerRef.current);
+    clearTimeout(holdTimerRef.current);
 
-    // compute longest (delay + duration)
+    if (!animate || pieces.length === 0) return;
+
     let maxSec = 0;
     for (const p of pieces) {
-      const ap = getAnimationProps(p);
-      const t = ap.transition || {};
-      const dur = typeof t.duration === "number" ? t.duration : 0;
-      const delay = typeof t.delay === "number" ? t.delay : 0;
-      const total = dur + delay;
+      const { transition: t } = getAnimationProps(p);
+      const total = (t?.duration ?? 0) + (t?.delay ?? 0);
       if (total > maxSec) maxSec = total;
     }
     if (maxSec === 0) maxSec = 2.5;
 
-    const bufferMs = 350;
     completionTimerRef.current = setTimeout(() => {
-      completionTimerRef.current = null;
-      try {
+      holdTimerRef.current = setTimeout(() => {
         if (typeof onAnimationComplete === "function") onAnimationComplete();
-      } catch (err) {
-        console.error("onAnimationComplete threw:", err);
-      }
-    }, Math.ceil(maxSec * 1000) + bufferMs);
+      }, holdDuration);
+    }, Math.ceil(maxSec * 1000) + 400);
 
     return () => {
-      if (completionTimerRef.current) {
-        clearTimeout(completionTimerRef.current);
-        completionTimerRef.current = null;
-      }
+      clearTimeout(completionTimerRef.current);
+      clearTimeout(holdTimerRef.current);
     };
-    // include animationType so timer recalculates when style changes
-  }, [animate, pieces, animationType, onAnimationComplete]);
+  }, [animate, pieces, animationType, onAnimationComplete, holdDuration, getAnimationProps]);
+
+  // ─── Sizing logic ──────────────────────────────────────────────────────────
+  //
+  // Goal: image fills as much of (100vw × 100vh) - PAD as possible,
+  //       preserving aspect ratio, no scrolling, no overflow.
+  //
+  // Strategy:
+  //   1. Give the box width: 100% so it wants to fill the parent flex container
+  //   2. maxWidth  = 100vw - 2*PAD  prevents horizontal overflow
+  //   3. maxHeight = 100vh - 2*PAD  prevents vertical overflow
+  //   4. aspect-ratio = W/H         makes height follow width…
+  //                                 …and when maxHeight is hit, browser
+  //                                 reduces width to satisfy both constraints.
+  //
+  // This works for ALL orientations: landscape, portrait, square.
+  // Do NOT set explicit height — that fights aspect-ratio.
+
+  const aspectRatio = imgSize ? `${imgSize.width} / ${imgSize.height}` : "16 / 9";
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white p-4 sm:p-6">
-      {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-6 sm:mb-8">
-        <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold bg-gradient-to-r from-purple-400 to-pink-600 bg-clip-text text-transparent mb-2">
-          Image Deform Studio
-        </h1>
-        <p className="text-slate-400 text-sm sm:text-base">Animations controlled by parent via <code>currentAnimation</code> prop</p>
-      </motion.div>
-
-      {/* Image Display Area */}
-      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="relative w-full max-w-[400px] aspect-square bg-slate-800/50 overflow-hidden rounded-2xl shadow-2xl shadow-purple-900/50 backdrop-blur-sm">
-        {!image && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center">
-              <p className="text-slate-400 text-sm">Awaiting image from parent</p>
-            </div>
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "linear-gradient(135deg, #0f0c29, #302b63, #24243e)",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          position: "relative",
+          // Must have width so the element isn't 0×0.
+          // width:100% fills the flex container, then maxWidth+maxHeight+aspect-ratio
+          // together constrain it to fit within the padded viewport.
+          width: "100%",
+          maxWidth: `calc(100vw - ${PAD * 2}px)`,
+          maxHeight: `calc(100vh - ${PAD * 2}px)`,
+          aspectRatio,
+          borderRadius: "16px",
+          overflow: "hidden",
+          boxShadow: "0 32px 80px rgba(120, 80, 255, 0.35)",
+          background: "#1a1730",
+          isolation: "isolate",
+        }}
+      >
+        {/* Placeholder when no image */}
+        {!imageURL && (
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.3)", fontSize: 14, fontFamily: "sans-serif" }}>
+            Awaiting image…
           </div>
         )}
 
+        {/* Pieces — rendered only when imgSize is resolved */}
         <AnimatePresence>
-          {image &&
-            pieces.map((piece) => {
-              const size = 400 / GRID_SIZE;
-              const backgroundPosition = `-${piece.col * size}px -${piece.row * size}px`;
-              const animProps = getAnimationProps(piece);
+          {imageURL && imgSize && pieces.map((piece) => {
+            // Tile geometry:
+            // backgroundSize = GRID_COLS*100% × GRID_ROWS*100%
+            //   → image stretched across the full container N times, one per grid
+            // backgroundPosition uses the CSS percentage formula for tiled grids:
+            //   posX% = col / (GRID_COLS-1) * 100  →  0% for first, 100% for last
+            //   posY% = row / (GRID_ROWS-1) * 100
+            // +1px bleed on width/height kills sub-pixel seam gaps at any DPR.
 
-              return (
-                <motion.div
-                  key={piece.id}
-                  initial={animProps.initial}
-                  animate={animate ? animProps.animate : {}}
-                  transition={animProps.transition}
-                  className="absolute"
-                  style={{
-                    width: `${100 / GRID_SIZE}%`,
-                    height: `${100 / GRID_SIZE}%`,
-                    left: `${(piece.col * 100) / GRID_SIZE}%`,
-                    top: `${(piece.row * 100) / GRID_SIZE}%`,
-                    backgroundImage: `url(${image})`,
-                    backgroundSize: "400px 400px",
-                    backgroundPosition,
-                    backgroundRepeat: "no-repeat",
-                    transformOrigin: "center center",
-                    backfaceVisibility: "hidden",
-                  }}
-                />
-              );
-            })}
+            const pctW = 100 / GRID_COLS;
+            const pctH = 100 / GRID_ROWS;
+            const bgPosX = GRID_COLS > 1 ? (piece.col / (GRID_COLS - 1)) * 100 : 0;
+            const bgPosY = GRID_ROWS > 1 ? (piece.row / (GRID_ROWS - 1)) * 100 : 0;
+            const ap = getAnimationProps(piece);
+
+            return (
+              <motion.div
+                key={`${imageURL}-${piece.id}`}
+                initial={ap.initial}
+                animate={animate ? ap.animate : {}}
+                transition={ap.transition}
+                style={{
+                  position: "absolute",
+                  width: `calc(${pctW}% + 1px)`,
+                  height: `calc(${pctH}% + 1px)`,
+                  left: `${piece.col * pctW}%`,
+                  top: `${piece.row * pctH}%`,
+                  backgroundImage: `url(${imageURL})`,
+                  backgroundSize: `${GRID_COLS * 100}% ${GRID_ROWS * 100}%`,
+                  backgroundPosition: `${bgPosX}% ${bgPosY}%`,
+                  backgroundRepeat: "no-repeat",
+                  transformOrigin: "center center",
+                  willChange: "transform, opacity",
+                  backfaceVisibility: "hidden",
+                  WebkitBackfaceVisibility: "hidden",
+                }}
+              />
+            );
+          })}
         </AnimatePresence>
-      </motion.div>
+      </div>
     </div>
   );
 }

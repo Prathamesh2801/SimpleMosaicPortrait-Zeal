@@ -1,9 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import MosaicBG from "../assets/img/demobg.jpg";
-import Logo from "../assets/img/logo.png";
-import { T } from "../constants/colors";
-import { Users } from "lucide-react";
+
 export default function MosaicWall({
   imageURL,
   onReset,
@@ -21,10 +19,10 @@ export default function MosaicWall({
   const ANIMATION_CONFIG = {
     initialDelay: 0.3,
     coverDuration: 0.6,
-    coverHoldDuration: 0.5,
-    shrinkDuration: 1.2,
-    revealDuration: 0.6,
-    particleDuration: 0.8,
+    coverHoldDuration: 1,
+    shrinkDuration: 0.8,
+    revealDuration: 1.2,
+    particleDuration: 1.3,
   };
 
   const totalAnimationTime =
@@ -371,15 +369,9 @@ export default function MosaicWall({
           (async () => {
             try {
               const file = await createMaskedTileFile(dataUrl, pick);
-              // call API (server expects only the file in form-data)
-              await uploadImageMosaic(file);
-              // optional: if your server returns a hosted URL and you want to use it:
-              // const resp = await uploadImageMosaic(file);
-              // if (resp && resp.url) {
-              //   setTiles(prev => { const out = prev.slice(); out[pick] = resp.url; return out; });
-              // }
+              console.log("✅ Tile created successfully:", file);
             } catch (err) {
-              console.error("Tile creation/upload failed for index", pick, err);
+              console.error("Tile creation failed for index", pick, err);
             }
           })();
         },
@@ -458,7 +450,7 @@ export default function MosaicWall({
           <img
             src={MosaicBG}
             alt="Background"
-            className="w-full h-full object-cover"
+            className="w-full h-full object-contain bg-black"
           />
         </div>
 
@@ -566,7 +558,7 @@ export default function MosaicWall({
                 <img
                   src={animatingImage}
                   alt="Animating"
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-contain bg-black"
                 />
 
                 {/* Glow effect during animation */}

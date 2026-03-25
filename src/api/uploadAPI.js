@@ -13,15 +13,13 @@ export const submitToAPI = async ({ name, image }) => {
     });
 
     if (res.status === 200 && res.data?.status === "success") {
-      return {
-        success: true,
-        data: res.data,
-      };
+      return res.data; // ✅ return actual data
     }
 
-    return { success: false };
+    // ❗ THROW instead of returning false
+    throw new Error("Upload failed");
   } catch (err) {
     console.error(err);
-    return { success: false };
+    throw err; // ❗ VERY IMPORTANT
   }
 };

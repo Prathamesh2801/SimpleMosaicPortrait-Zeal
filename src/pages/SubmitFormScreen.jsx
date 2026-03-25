@@ -114,22 +114,24 @@ export default function SubmitFormScreen() {
     setLoading(true);
 
     try {
-      const result = await submitToAPI({
-        name: fields.fullName.trim(),
-        image: file, // ✅ THIS is the real fix
-      });
+      await toast.promise(
+        submitToAPI({
+          name: fields.fullName.trim(),
+          image: file,
+        }),
+        {
+          loading: "Uploading...",
+          success: "Submitted successfully!",
+          error: "Submission failed.",
+        },
+      );
 
-      console.log("On API Call : ", result);
-
-      if (result.success) {
-        toast.success("Submitted successfully!");
-
+      // ✅ Only runs on success
+      setTimeout(() => {
         navigate("/camera");
-      } else {
-        toast.error("Upload failed");
-      }
-    } catch {
-      toast.error("Submission failed. Please try again.");
+      }, 500);
+    } catch (err) {
+      console.error("Upload failed:", err);
     } finally {
       setLoading(false);
     }
